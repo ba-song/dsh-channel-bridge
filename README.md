@@ -13,6 +13,10 @@
   发送一律 **base64**（SnowLuma 在另一个容器，`file://` 看不到我们的 `/tmp`、`/sdcard`）；
 - **引用（2026-11-16）**：入站 `reply` 段只带 `message_id`，桥用 `get_msg` 反查被引用原文，
   正文前拼 `[引用 某某：原文…]`；`dy_say` 新增可选 `replyTo`，发消息时带 `reply` 段（只第一段带）；
+- **QQ 常用能力（2026-11-16）**：拍一拍、表情回应、发文件、发视频、合并转发（收+发）、
+  群成员/群资料/群公告、好友列表/备注/加删好友、收藏表情、卡片(txt)解析；
+- **notice 事件（2026-11-16）**：撤回/拍一拍/进群退群/禁言/管理员/群文件/好友添加 全部落库，
+  按 `notices.deliver` 白名单投进会话（默认只投撤回/拍一拍/好友添加，避免噪音）；
 - **群规则**：默认只有 @ 她才回；@ 后开「跟话窗口」，窗口内不 @ 也投；被 @ 时带近况+群上下文；
 - **房间规矩**（`【这个房间的规矩】`）只在**新会话/轮换后的第一条**带一次，后续消息与补收/重放都不重复注入（与 home 一致）；
 - **会话**：**每个群 / 每个陌生私聊一个会话**（key=`group:<群号>` / `private:<QQ号>`），
@@ -109,7 +113,60 @@ seed = handoff-note 提示 + 旧会话最近 50 条原话）；记 `prev_session
 `approve`/`reject` → `set_doubt_friends_add_request({flag,approve})`（flag 用列表项 `uid`，不能按 QQ 号构造）；
 `approve` 必须 `confirm:true`；失败不重试；审计 `action='friend_request:<action>'`（不记 flag）。
 
-### 2.12 `dy_bridge_status` — 只读状态
+### 2.12 `dy_qq_poke` — 拍一拍（写）
+
+`{kind:'private'|'group', contactId, userId?}`。私聊 → `friend_poke({user_id})`；群 → `group_poke({group_id,user_id})`（群拍必须给 `userId`）；
+失败不重试；审计 `qq_ops(action='poke')`。
+
+### 2.13 `dy_qq_reaction` — 消息表情回应（写）
+
+`{messageId, emojiId, set?}` → `set_msg_emoji_like({message_id, emoji_id, set})`；`set:false` 取消；
+`emojiId` 是 QQ 表情 id（如 `76`=赞）或名称；审计 `action='reaction'`。
+
+### 2.14 `dy_qq_forward_msg` — 合并转发（写）
+
+`{kind, contactId, items:[{senderName?,text}]}`（最多 20 条）→ `send_private_forward_msg` / `send_group_forward_msg`；
+节点用 `buildForwardNodes` 拼 `{type:'node'}`；失败不重试。
+
+### 2.15 `dy_qq_get_forward` — 读合并转发（只读）
+
+`{id?, messageId?}` 二选一 → `get_forward_msg`；返回节点数与渲染文本（`formatForward`，最多 8 条/600 字）。
+
+### 2.16 `dy_qq_members` — 群成员列表（只读）
+
+`{groupId, limit?}` → `get_group_member_list`；返回 `userId/nickname/card/role/lastSentTime`。
+
+### 2.17 `dy_qq_group_info` — 群资料 + 公告（只读）
+
+`{groupId}` → `get_group_info` + `_get_group_notice`；返回群名/人数/最近 3 条公告。
+
+### 2.18 `dy_qq_friends` — 好友列表（只读）
+
+`{limit?}` → `get_friend_list`；返回 `userId/nickname/remark`。
+
+### 2.19 `dy_qq_custom_face` — 收藏表情
+
+`{action:'list'|'send', emojiId?, kind?, contactId?}`：`list` → `fetch_custom_face`；
+`send` → `send_custom_face({emoji_id, user_id|group_id})`；发送失败不重试。
+
+### 2.20 `dy_qq_friend` — 好友关系（写，必须 confirm）
+
+`{action:'add'|'delete'|'remark'|'approve'|'blacklist'|'report', userId?, flag?, message?, remark?, confirm}`：
+- `delete` → `delete_friend`；`remark` → `set_friend_remark`；`add`/`approve` → `set_friend_add_request({flag,approve:true})`；
+- `blacklist`/`report`：SnowLuma 无接口，返回 `E_UNSUPPORTED`；
+- 除 `remark` 外都要 `confirm:true`；失败不重试。
+
+### 2.21 `dy_qq_file` — 发文件（写）
+
+`{kind, contactId, path, name?}`；白名单 `/sdcard/DSHA`、`/tmp`，默认 ≤8MB；
+读文件 → `base64://` → `upload_private_file`/`upload_group_file`；失败不重试。
+
+### 2.22 `dy_qq_video` — 发视频（写）
+
+`{kind, contactId, path, caption?}`；mp4/mov/mkv/webm/avi，≤20MB；
+`video` 消息段（base64）；失败不重试。
+
+### 2.23 `dy_bridge_status` — 只读状态
 
 无参数。返回 mode / opened / health / messages / delivered / deliverFail / agentErrors /
 echoSkipped / cardSkipped / groupMentionSkipped / groupFollowUpOpen / sessions / replay /
@@ -133,6 +190,9 @@ reconcile / unifiedStats / mirror / media / db 等。
 | `unified` | `false` | 私聊转 `dyHome.deliver`；群不变 |
 | `echoWindowMs` | `3000` | 同 contact 同文本短窗回声去重 |
 | `quote.timeoutMs` | `3000`（500–15000） | 引用反查 `get_msg` 的超时；失败只丢引用、不影响正文 |
+| `forward.timeoutMs` | `3000`（500–15000） | 合并转发反查 `get_forward_msg` 的超时 |
+| `notices.enabled` / `deliver` | true / `['friend_recall','poke','friend_add','group_recall']` | notice 全落库；只有白名单 kind 投进会话（群撤回/拍一拍还要跟话窗口开着） |
+| `media.maxVideos` | `2` | 入站视频每次最多落盘几条（0 = 全占位） |
 | `reconcile.enabled/everyMs/count/backoffMs/activeDays` | true / 60000 / 20 / 1h / 7 | 周期对账（私聊） |
 | `reconcile.groups` / `groupCount` | `true` / 20 | 群对账开关 / 每群每轮拉多少条（1–100） |
 | `handover.sessionId/since/maxChars` | `bfd29a79…` / 2026-11-05 16:50+08 / 20000 | 一次性交接 |
