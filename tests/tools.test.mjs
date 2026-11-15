@@ -28,18 +28,29 @@ function harness({ mode = 'send', sendResult = { ok: true, messageId: 'mid-1' },
 
 test('注册了 dy_say，参数四件套必填', () => {
   const h = harness()
-  assert.equal(h.tools.defs.length, 13)
+  assert.equal(h.tools.defs.length, 24)
   assert.deepEqual(
     h.tools.defs.map((d) => d.name).sort(),
     [
       'dy_bridge_rotate',
       'dy_bridge_status',
       'dy_qq_avatar',
-      'dy_qq_forward',
+      'dy_qq_custom_face',
+      'dy_qq_file',
+      'dy_qq_friend',
       'dy_qq_friend_request',
+      'dy_qq_forward',
+      'dy_qq_forward_msg',
+      'dy_qq_friends',
+      'dy_qq_get_forward',
+      'dy_qq_group_info',
+      'dy_qq_members',
+      'dy_qq_poke',
       'dy_qq_profile',
+      'dy_qq_reaction',
       'dy_qq_recall',
       'dy_qq_status',
+      'dy_qq_video',
       'dy_say',
       'dy_send_face',
       'dy_send_image',
