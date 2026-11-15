@@ -121,7 +121,8 @@ seed = handoff-note 提示 + 旧会话最近 50 条原话）；记 `prev_session
 ### 2.13 `dy_qq_reaction` — 消息表情回应（写）
 
 `{messageId, emojiId, set?}` → `set_msg_emoji_like({message_id, emoji_id, set})`；`set:false` 取消；
-`emojiId` 是 QQ 表情 id（如 `76`=赞）或名称；审计 `action='reaction'`。
+`emojiId` 规则（SL 实测）：长度 ≤3 → QQ 小表情 id（`76`=赞、`4`=得意）；长度 >3 → Unicode 码点（`128077`=👍）；
+**私聊不支持**（SL 报 `emoji reactions are not supported on private messages`），群聊可用；审计 `action='reaction'`。
 
 ### 2.14 `dy_qq_forward_msg` — 合并转发（写）
 
@@ -146,25 +147,27 @@ seed = handoff-note 提示 + 旧会话最近 50 条原话）；记 `prev_session
 
 ### 2.19 `dy_qq_custom_face` — 收藏表情
 
-`{action:'list'|'send', emojiId?, kind?, contactId?}`：`list` → `fetch_custom_face`；
-`send` → `send_custom_face({emoji_id, user_id|group_id})`；发送失败不重试。
+`{action:'list'|'send', emojiId?, kind?, contactId?}`：`list` → `fetch_custom_face`（实测返回 URL 字符串数组，
+`emojiId` 取 URL 里的 32 位 MD5）；`send` → `send_custom_face({emoji_id, user_id|group_id})`；发送失败不重试。
 
 ### 2.20 `dy_qq_friend` — 好友关系（写，必须 confirm）
 
 `{action:'add'|'delete'|'remark'|'approve'|'blacklist'|'report', userId?, flag?, message?, remark?, confirm}`：
 - `delete` → `delete_friend`；`remark` → `set_friend_remark`；`add`/`approve` → `set_friend_add_request({flag,approve:true})`；
-- `blacklist`/`report`：SnowLuma 无接口，返回 `E_UNSUPPORTED`；
+- `blacklist` → `delete_friend({user_id, block:true})`（SL 没有独立拉黑 action，这是唯一入口：删除并拉黑）；
+- `report`：SnowLuma 无举报接口，返回 `E_UNSUPPORTED`；
 - 除 `remark` 外都要 `confirm:true`；失败不重试。
 
 ### 2.21 `dy_qq_file` — 发文件（写）
 
-`{kind, contactId, path, name?}`；白名单 `/sdcard/DSHA`、`/tmp`，默认 ≤8MB；
-读文件 → `base64://` → `upload_private_file`/`upload_group_file`；失败不重试。
+`{kind, contactId, path, name?, base64?}`；白名单 `/sdcard/DSHA`、`/tmp`，默认 ≤8MB；
+默认传 `file://<路径>`（实测 SnowLuma 与桥同 mount namespace，能直接读），`base64:true` 才读成 base64；
+→ `upload_private_file`/`upload_group_file`；失败不重试。
 
 ### 2.22 `dy_qq_video` — 发视频（写）
 
 `{kind, contactId, path, caption?}`；mp4/mov/mkv/webm/avi，≤20MB；
-`video` 消息段（base64）；失败不重试。
+`video` 消息段（base64，实测可发）；**video 必须是消息里唯一段**，caption 会单独先发一条；失败不重试。
 
 ### 2.23 `dy_bridge_status` — 只读状态
 

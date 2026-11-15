@@ -156,11 +156,15 @@ test('dy_qq_custom_face：list 只读 / send 发送', async () => {
 
 test('dy_qq_friend：blacklist/report 不支持；delete 需 confirm；remark 走 set_friend_remark', async () => {
   const h = setup()
-  const bl = await h.tool('dy_qq_friend').execute({ action: 'blacklist', userId: '1' }, exec)
-  assert.equal(bl.ok, false)
-  assert.match(bl.detail, /E_UNSUPPORTED/)
+  const bl0 = await h.tool('dy_qq_friend').execute({ action: 'blacklist', userId: '1' }, exec)
+  assert.equal(bl0.ok, false)
+  assert.match(bl0.detail, /E_CONFIRM_REQUIRED/)
+  const bl = await h.tool('dy_qq_friend').execute({ action: 'blacklist', userId: '1', confirm: true }, exec)
+  assert.equal(bl.ok, true)
+  assert.deepEqual(h.calls.at(-1), { action: 'delete_friend', params: { user_id: 1, block: true } })
   const rep = await h.tool('dy_qq_friend').execute({ action: 'report', userId: '1' }, exec)
   assert.equal(rep.ok, false)
+  assert.match(rep.detail, /E_UNSUPPORTED/)
 
   const d0 = await h.tool('dy_qq_friend').execute({ action: 'delete', userId: '1' }, exec)
   assert.equal(d0.ok, false)
@@ -178,14 +182,18 @@ test('dy_qq_friend：blacklist/report 不支持；delete 需 confirm；remark �
   assert.match(a0.detail, /flag/)
 })
 
-test('dy_qq_file：合法 pdf → upload_private_file(base64)；超限/白名单外拒绝', async () => {
+test('dy_qq_file：合法 pdf → upload_private_file（默认 file://，base64:true 走 base64）；超限/白名单外拒绝', async () => {
   const h = setup()
   const r = await h.tool('dy_qq_file').execute({ kind: 'private', contactId: '2971030080', path: pdf }, exec)
   assert.equal(r.ok, true)
   const c = h.calls.at(-1)
   assert.equal(c.action, 'upload_private_file')
-  assert.ok(c.params.file.startsWith('base64://'))
-  assert.equal(Buffer.from(c.params.file.slice('base64://'.length), 'base64').toString(), 'PDFDATA')
+  assert.equal(c.params.file, `file://${pdf}`) // 同 mount namespace 可读
+  const r2 = await h.tool('dy_qq_file').execute({ kind: 'private', contactId: '2971030080', path: pdf, base64: true }, exec)
+  assert.equal(r2.ok, true)
+  const c2 = h.calls.at(-1)
+  assert.ok(c2.params.file.startsWith('base64://'))
+  assert.equal(Buffer.from(c2.params.file.slice('base64://'.length), 'base64').toString(), 'PDFDATA')
 
   const tooBig = await h.tool('dy_qq_file').execute({ kind: 'private', contactId: '2971030080', path: bigPdf }, exec)
   assert.equal(tooBig.ok, false)
