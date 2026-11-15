@@ -1,0 +1,14 @@
+# bundle 自带插入项。默认 enabled:false —— 统筹者安装时才把它接进 profile。
+# token 不要写在这里：放 /root/.dsh/dsh-channel-bridge.token（0600）或环境变量 DSH_CHANNEL_BRIDGE_TOKEN。
+- insert:
+    - id: channel-bridge
+      name: dsh-channel-bridge
+      config:
+        enabled: false
+        mode: observe
+        host: '127.0.0.1'
+        port: 3001
+        cwd: '/sdcard/DSHA/渠道/qq'
+        owner:
+          qqIds:
+            - '2971030080'
