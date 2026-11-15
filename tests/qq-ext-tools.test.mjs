@@ -195,14 +195,14 @@ test('dy_qq_file：合法 pdf → upload_private_file(base64)；超限/白名单
   assert.match(badExt.detail, /E_FORMAT/)
 })
 
-test('dy_qq_video：合法 mp4 → video 段；非视频拒绝', async () => {
+test('dy_qq_video：合法 mp4 → video 段（唯一段）；非视频拒绝', async () => {
   const h = setup()
-  const r = await h.tool('dy_qq_video').execute({ kind: 'private', contactId: '2971030080', path: mp4, caption: '看' }, exec)
+  const r = await h.tool('dy_qq_video').execute({ kind: 'private', contactId: '2971030080', path: mp4 }, exec)
   assert.equal(r.ok, true)
   const seg = h.sent[0].message
-  assert.deepEqual(seg[0], { type: 'text', data: { text: '看' } })
-  assert.equal(seg[1].type, 'video')
-  assert.ok(seg[1].data.file.startsWith('base64://'))
+  assert.equal(seg.length, 1) // SL 要求 video 必须是唯一段
+  assert.equal(seg[0].type, 'video')
+  assert.ok(seg[0].data.file.startsWith('base64://'))
 
   const bad = await h.tool('dy_qq_video').execute({ kind: 'private', contactId: '2971030080', path: txt }, exec)
   assert.equal(bad.ok, false)
