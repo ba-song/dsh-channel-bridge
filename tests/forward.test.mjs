@@ -142,6 +142,10 @@ test('createForwardReader：抛错/超时 → null 不抛；无 client → null'
   assert.equal(await noClient.resolve({ id: 'res-noclient' }), null)
   assert.equal(noClient.stats.noClient, 1)
   assert.ok(warns.some((w) => w.includes('id=res-noclient')))
+
+  const badGetClient = createForwardReader({ getClient: () => { throw new Error('boom') }, log })
+  assert.equal(await badGetClient.resolve({ id: 'res-throw' }), null)
+  assert.equal(badGetClient.stats.fail, 1)
 })
 
 test('createForwardReader：空 id / 空消息列表 → null（不抛）', async () => {

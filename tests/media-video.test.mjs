@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createMedia } from '../lib/media.js'
+import { parseMessageEvent } from '../lib/parse.js'
 
 const dir = () => mkdtempSync(join(tmpdir(), 'bridge-video-'))
 const DAY = '2026-11-05'
@@ -211,6 +212,37 @@ test('命名按 media 数组位置：图片之后的视频是 <messageId>-2.mp4�
   assert.match(out.attachments[0], /9001-1\.png$/)
   assert.match(out.attachments[1], /9001-2\.mp4$/)
   assert.equal(readFileSync(join(d, DAY, '9001-2.jpg'), 'utf8'), 'J')
+  rmSync(d, { recursive: true, force: true })
+})
+
+test('端到端：parse 的 video 段 → enrich 落盘 mp4 + 封面', async () => {
+  const d = dir()
+  const fetchImpl = fakeFetch({
+    'https://x/qq.mp4': { ct: 'video/mp4', body: 'MP4' },
+    'https://x/qq.jpg': { ct: 'image/jpeg', body: 'JPG' },
+  })
+  const p = parseMessageEvent({
+    post_type: 'message',
+    message_type: 'private',
+    self_id: 1,
+    user_id: 2,
+    message_id: 77,
+    time: Math.floor(Date.parse('2026-11-05T01:02:03Z') / 1000),
+    sender: { nickname: '主人' },
+    message: [
+      { type: 'text', data: { text: '看视频' } },
+      { type: 'video', data: { url: 'https://x/qq.mp4', file: 'qq.mp4', name: '猫.mp4', thumb: 'https://x/qq.jpg' } },
+    ],
+  }, { selfId: '1', owner: { qqIds: ['2'] } })
+  assert.equal(p.media.length, 1)
+  assert.equal(p.media[0].kind, 'video')
+  assert.equal(p.text, '看视频')
+  const m = createMedia({ cfg: { media: { dir: d } }, fetchImpl })
+  const out = await m.enrich(p)
+  assert.equal(out.attachments.length, 1)
+  assert.match(out.attachments[0], /^\[视频\] \/.*77-1\.mp4$/)
+  assert.equal(readFileSync(fileOf(out.attachments[0]), 'utf8'), 'MP4')
+  assert.equal(readFileSync(join(d, '2026-11-05', '77-1.jpg'), 'utf8'), 'JPG')
   rmSync(d, { recursive: true, force: true })
 })
 
