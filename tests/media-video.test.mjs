@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { createMedia } from '../lib/media.js'
 
 const dir = () => mkdtempSync(join(tmpdir(), 'bridge-video-'))
@@ -216,12 +216,16 @@ test('命名按 media 数组位置：图片之后的视频是 <messageId>-2.mp4�
 
 test('media.enabled=false / replay → 视频退回占位，不下载', async () => {
   const fetchImpl = fakeFetch({})
-  const disabled = createMedia({ cfg: { media: { dir: dir(), enabled: false } }, fetchImpl })
+  const d1 = dir()
+  const d2 = dir()
+  const disabled = createMedia({ cfg: { media: { dir: d1, enabled: false } }, fetchImpl })
   const a = await disabled.enrich(parsed([{ kind: 'video', url: 'https://x/v.mp4', thumb: 'https://x/t.jpg' }]))
   assert.deepEqual(a.attachments, ['[视频]'])
 
-  const replaying = createMedia({ cfg: { media: { dir: dir() } }, fetchImpl })
+  const replaying = createMedia({ cfg: { media: { dir: d2 } }, fetchImpl })
   const b = await replaying.enrich(parsed([{ kind: 'video', url: 'https://x/v.mp4', thumb: 'https://x/t.jpg' }], { replay: true }))
   assert.deepEqual(b.attachments, ['[视频](未落地)'])
   assert.equal(fetchImpl.calls.length, 0)
+  rmSync(d1, { recursive: true, force: true })
+  rmSync(d2, { recursive: true, force: true })
 })

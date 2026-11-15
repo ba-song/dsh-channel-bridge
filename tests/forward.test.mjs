@@ -192,7 +192,7 @@ test('formatForward：maxNodes 截断并注明剩余，maxChars 整行截断', (
   assert.ok(short.includes('…（还有 8 条）'))
   assert.ok(!short.includes('第3句'))
 
-  const long = formatForward({ nodes: [{ senderName: '甲', text: '字'.repeat(100) }] })
+  const long = formatForward({ nodes: [{ senderName: '甲', text: '字'.repeat(700) }] })
   assert.equal([...long].length, 601)
   assert.ok(long.endsWith('…'))
   assert.ok(long.startsWith('[合并转发 1 条] 1. 甲：字字'))
