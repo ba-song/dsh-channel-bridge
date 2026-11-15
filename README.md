@@ -11,6 +11,8 @@
 - **发**：`dy_say`（QQ 文本 / email）、图片、语音、QQ 原生表情、改资料/状态/头像；
 - **附件**：图片/文件/语音落盘 `/sdcard/DSHA/渠道/qq/附件/<day>/`，正文给绝对路径；
   发送一律 **base64**（SnowLuma 在另一个容器，`file://` 看不到我们的 `/tmp`、`/sdcard`）；
+- **引用（2026-11-16）**：入站 `reply` 段只带 `message_id`，桥用 `get_msg` 反查被引用原文，
+  正文前拼 `[引用 某某：原文…]`；`dy_say` 新增可选 `replyTo`，发消息时带 `reply` 段（只第一段带）；
 - **群规则**：默认只有 @ 她才回；@ 后开「跟话窗口」，窗口内不 @ 也投；被 @ 时带近况+群上下文；
 - **房间规矩**（`【这个房间的规矩】`）只在**新会话/轮换后的第一条**带一次，后续消息与补收/重放都不重复注入（与 home 一致）；
 - **会话**：**每个群 / 每个陌生私聊一个会话**（key=`group:<群号>` / `private:<QQ号>`），
@@ -33,6 +35,7 @@
 | `contactId` | QQ 号/群号，或邮箱地址（email） |
 | `kind` | qq 必填：`private` / `group` |
 | `subject` | 仅 email：主题，默认「汐的邮件」 |
+| `replyTo` | 可选：要引用的 QQ `message_id`（可负）；只给第一段消息带 `reply` 段 |
 | `text` | 正文；QQ ≤2000 字（`say.maxTextChars`），email ≤5000；`[SILENT]` = 不发 |
 
 - QQ：按 60 字/4 段自动拆条，逐条 `send_private_msg`/`send_group_msg`（`auto_escape:true`）；
@@ -129,6 +132,7 @@ reconcile / unifiedStats / mirror / media / db 等。
 | `say.maxTextChars` / `maxLen` / `maxSegments` / `contactWindowMs` | 2000 / 60 / 4 / 7 天 | QQ 文本长度与拆条 |
 | `unified` | `false` | 私聊转 `dyHome.deliver`；群不变 |
 | `echoWindowMs` | `3000` | 同 contact 同文本短窗回声去重 |
+| `quote.timeoutMs` | `3000`（500–15000） | 引用反查 `get_msg` 的超时；失败只丢引用、不影响正文 |
 | `reconcile.enabled/everyMs/count/backoffMs/activeDays` | true / 60000 / 20 / 1h / 7 | 周期对账（私聊） |
 | `reconcile.groups` / `groupCount` | `true` / 20 | 群对账开关 / 每群每轮拉多少条（1–100） |
 | `handover.sessionId/since/maxChars` | `bfd29a79…` / 2026-11-05 16:50+08 / 20000 | 一次性交接 |
@@ -157,7 +161,7 @@ QQ ── SnowLuma(OneBot) ── WS ws://127.0.0.1:3001 ── 桥
                                      │  action: send_private_msg / send_group_msg / set_qq_profile …
                                      ▼
 实时入站 → 去重(message_id) → 回声短窗 → 占位卡片过滤 → 群门禁(@ / 跟话窗口)
-        → 落 bridge.db → 富化附件 → unified?(home) : 自己的会话(followup)
+        → 落 bridge.db → 富化附件 + 引用（get_msg 反查 reply）→ unified?(home) : 自己的会话(followup)
 ```
 
 - **发送**：桥走同一条 WS 的 OneBot action；文本 `auto_escape:true`；图片/语音/头像用 **base64**，
