@@ -33,3 +33,19 @@ test('content 永远是数组、对象冻结', () => {
   assert.ok(Object.isFrozen(m.content))
   assert.match(m.id, /^[0-9a-f-]{36}$/)
 })
+
+test('blocks：图片直投作为第二个 content（text 在前）', () => {
+  const img = { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/jpeg', bytes: 3, width: 1, height: 1 } }
+  const m = buildChannelMessage('看图', parsed, { blocks: [img] })
+  assert.equal(m.content.length, 2)
+  assert.equal(m.content[0].type, 'text')
+  assert.equal(m.content[0].text, '看图')
+  assert.deepEqual(m.content[1], img)
+  assert.ok(Object.isFrozen(m.content[1]))
+})
+
+test('blocks：非法项被忽略，不影响纯文本消息', () => {
+  const m = buildChannelMessage('hi', parsed, { blocks: [null, {}, { type: '' }] })
+  assert.equal(m.content.length, 1)
+  assert.equal(m.content[0].type, 'text')
+})
