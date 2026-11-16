@@ -10,6 +10,7 @@
 - **收**：OneBot v11 WS 事件（私聊/群聊）→ 去重 →（unified 时转 home）→ 富化附件 → 投进会话；
 - **发**：`dy_say`（QQ 文本 / email）、图片、语音、QQ 原生表情、改资料/状态/头像；
 - **附件**：图片/文件/语音落盘 `/sdcard/DSHA/渠道/qq/附件/<day>/`，正文给绝对路径；
+  2026-11-16 起：图片 url 失效用 SL `get_image` 换新地址兜底、同 md5 图去重、多图并发（3）、群聊第一张图直投成 image 附件；
   发送一律 **base64**（SnowLuma 在另一个容器，`file://` 看不到我们的 `/tmp`、`/sdcard`）；
 - **引用（2026-11-16）**：入站 `reply` 段只带 `message_id`，桥用 `get_msg` 反查被引用原文，
   正文前拼 `[引用 某某：原文…]`；`dy_say` 新增可选 `replyTo`，发消息时带 `reply` 段（只第一段带）；
@@ -196,6 +197,7 @@ reconcile / unifiedStats / mirror / media / db 等。
 | `forward.timeoutMs` | `3000`（500–15000） | 合并转发反查 `get_forward_msg` 的超时 |
 | `notices.enabled` / `deliver` | true / `['friend_recall','poke','friend_add','group_recall']` | notice 全落库；只有白名单 kind 投进会话（群撤回/拍一拍还要跟话窗口开着） |
 | `media.maxVideos` | `2` | 入站视频每次最多落盘几条（0 = 全占位） |
+| `images.inline` / `maxInline` | true / 1 | 群聊图片直投：第一张图存进 attachment 服务随消息投给模型（不用她 read_image）；私聊走 dyHome 只收文本，不受此开关影响 |
 | `reconcile.enabled/everyMs/count/backoffMs/activeDays` | true / 60000 / 20 / 1h / 7 | 周期对账（私聊） |
 | `reconcile.groups` / `groupCount` | `true` / 20 | 群对账开关 / 每群每轮拉多少条（1–100） |
 | `handover.sessionId/since/maxChars` | `bfd29a79…` / 2026-11-05 16:50+08 / 20000 | 一次性交接 |

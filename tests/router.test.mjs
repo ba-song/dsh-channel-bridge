@@ -210,3 +210,21 @@ test('房间规矩：挂 systemPrompt 常驻上下文后，消息里不再重复
   assert.ok(!got[0].content[0].text.includes('【这个房间的规矩】'), '消息里不再重复规则')
   assert.ok(!got[1].content[0].text.includes('【这个房间的规矩】'))
 })
+
+test('群聊 inlineImage：followup 消息带 image block（text 在前）', async () => {
+  const sessions = fakeSessions()
+  const img = { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/jpeg', bytes: 9, width: 2, height: 3 } }
+  const r = createRouter({
+    store: openBridgeDb(':memory:'),
+    sessions,
+    mode: modeOf('send'),
+    enrich: async () => ({ attachments: [], inlineImage: img }),
+  })
+  r.deliver(parsed({ kind: 'group', contactId: '707380948', contactName: '测试群', text: '看图' }))
+  await r.idle()
+  assert.equal(sessions.got.length, 1)
+  const msg = sessions.got[0]
+  assert.equal(msg.content[0].type, 'text')
+  assert.equal(msg.content[1].type, 'image')
+  assert.deepEqual(msg.content[1], img)
+})
