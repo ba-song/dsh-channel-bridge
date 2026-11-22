@@ -49,6 +49,6 @@ test('跨联系人/会话类型隔离；缺少会话范围时 fail closed', () =
   const scoped = buildSessionContext({ store, cfg, conversation })
   assert.match(scoped, /当前私聊消息/)
   assert.doesNotMatch(scoped, /其他私聊秘密|同号群聊消息|其他渠道消息/)
-  assert.equal(buildSessionContext({ store, cfg, conversation }), '')
+  assert.equal(buildSessionContext({ store, cfg }), '')
   assert.equal(buildSessionContext({ store, cfg, conversation: { channel: 'qq', kind: 'private' } }), '')
 })
