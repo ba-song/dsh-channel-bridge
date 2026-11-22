@@ -59,6 +59,22 @@ test('同渠道串行：两条按顺序', async () => {
   assert.match(order[1], /^\[QQ·私聊·饲养员\(2971030080\)\] b/)
 })
 
+test('新会话上下文 builder 接收当前消息的完整会话范围', async () => {
+  let received = null
+  const agent = { followup: async () => {}, session: { log: [] } }
+  const sessions = { ensure: async () => ({ ok: true, agent, sessionId: 'sess-new', created: true }) }
+  const r = createRouter({
+    store: openBridgeDb(':memory:'),
+    sessions,
+    mode: modeOf('send'),
+    contextBuilder: (scope) => { received = scope; return '' },
+  })
+  const current = parsed({ channel: 'qq', kind: 'group', contactId: '707380948', senderId: '42', messageId: 'scope-1' })
+  r.deliver(current)
+  await r.idle()
+  assert.equal(received, current)
+})
+
 test('投递失败：不 followup、计入 deliverFail', async () => {
   const sessions = fakeSessions('fail')
   const r = createRouter({ store: openBridgeDb(':memory:'), sessions, mode: modeOf('send') })
