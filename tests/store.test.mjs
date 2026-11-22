@@ -109,3 +109,17 @@ test('v2 老库迁移：channel_sessions 补 kind，旧行归 private', () => {
   again.close()
   rmSync(dir, { recursive: true, force: true })
 })
+
+test('新会话上下文查询必须同时限定 channel/kind/contact，缺范围返回空', () => {
+  const s = openBridgeDb(':memory:')
+  s.insertEvent({ at: 100, channel: 'qq', kind: 'private', contact: 'A', direction: 'in', text: 'private-A' })
+  s.insertEvent({ at: 200, channel: 'qq', kind: 'private', contact: 'B', direction: 'in', text: 'private-B' })
+  s.insertEvent({ at: 300, channel: 'qq', kind: 'group', contact: 'A', direction: 'in', text: 'group-A' })
+  s.insertEvent({ at: 400, channel: 'other', kind: 'private', contact: 'A', direction: 'in', text: 'other-channel-A' })
+
+  const rows = s.recentInboundAsc({ channel: 'qq', kind: 'private', contact: 'A', limit: 10 })
+  assert.deepEqual(rows.map((r) => r.text), ['private-A'])
+  assert.deepEqual(s.recentInboundAsc({ channel: 'qq', limit: 10 }), [])
+  assert.deepEqual(s.recentInboundAsc({ channel: 'qq', kind: 'private', limit: 10 }), [])
+  s.close()
+})
