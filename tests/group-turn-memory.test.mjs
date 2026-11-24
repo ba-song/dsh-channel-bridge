@@ -170,3 +170,133 @@ test('config.groupMemory：默认开启/15s；enabled 只认布尔 true', () => 
   assert.equal(loadConfig({ groupMemory: { flushIdleMs: 5000 } }).groupMemory.flushIdleMs, 5000)
   assert.equal(loadConfig({ groupMemory: { flushIdleMs: 1 } }).groupMemory.flushIdleMs, 1000) // 下限 1s
 })
+
+
+test('写入限流后保留本轮内容；重试成功才推进游标', async () => {
+  const seq = [
+    { ok: false, reason: 'rate-limited' },
+    { ok: true, id: 'saved-after-retry', chars: 20 },
+  ]
+  const h = setup({
+    idleMs: 60000,
+    memory: { saveGroupTurn: async (x) => { h.calls.push(x); return seq.shift() } },
+    messages: [{ speaker: '群友A', text: '不要丢掉我', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '我听到了' })
+  const first = await h.mod.flush(GID)
+  assert.equal(first.reason, 'rate-limited')
+  assert.equal(h.calls.length, 1)
+
+  const second = await h.mod.flush(GID)
+  assert.equal(second.ok, true)
+  assert.equal(h.calls.length, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['不要丢掉我'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '我听到了', at: T0 }])
+
+  // 成功提交后，同一条旧入站不能再次进入记忆
+  await h.mod.flush(GID)
+  assert.equal(h.calls.length, 2)
+  h.mod.dispose()
+})
+
+test('saveGroupTurn 抛异常后保留回复；并发 flush 对同一群单飞', async () => {
+  let release
+  let attempts = 0
+  const gate = new Promise((resolve) => { release = resolve })
+  const h = setup({
+    idleMs: 60000,
+    memory: {
+      saveGroupTurn: async (x) => {
+        attempts += 1
+        h.calls.push(x)
+        if (attempts === 1) throw new Error('temporary failure')
+        if (attempts === 2) await gate
+        return { ok: true, id: 'ok', chars: 10 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '这条要留下', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '我来处理' })
+  const failed = await h.mod.flush(GID)
+  assert.equal(failed.ok, false)
+  assert.equal(failed.error, 'temporary failure')
+
+  const first = h.mod.flush(GID)
+  const concurrent = h.mod.flush(GID)
+  await Promise.resolve()
+  assert.equal(attempts, 2)
+  release()
+  const [a, b] = await Promise.all([first, concurrent])
+  assert.equal(a.ok, true)
+  assert.equal(b.ok, true)
+  assert.equal(attempts, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['这条要留下'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '我来处理', at: T0 }])
+  h.mod.dispose()
+})
+
+
+test('flush 进行中有新回复到达：单飞结束后重新安排 flush，不丢缓冲', async () => {
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const h = setup({
+    idleMs: 10,
+    memory: {
+      saveGroupTurn: async (x) => {
+        h.calls.push(x)
+        if (h.calls.length === 1) await gate
+        return { ok: true, id: h.calls.length, chars: 10 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '第一轮', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '第一轮回复' })
+  const first = h.mod.flush(GID)
+
+  h.bucket.messages.push({ speaker: '群友B', text: '第二轮', at: T0 + 1000 })
+  h.mod.noteReply({ groupId: GID, text: '第二轮回复' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(h.calls.length, 1)
+
+  release()
+  await first
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  assert.equal(h.calls.length, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['第二轮'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '第二轮回复', at: T0 }])
+  h.mod.dispose()
+})
+
+
+test('写入已落库但响应异常：重试沿用同一轮次时间，服务端可判 duplicate', async () => {
+  const persisted = new Map()
+  let first = true
+  const times = [T0, T0 + 5000]
+  const h = setup({
+    idleMs: 60000,
+    now: () => times.shift() ?? T0 + 9000,
+    memory: {
+      saveGroupTurn: async (x) => {
+        h.calls.push(x)
+        const key = `group-turn:${x.groupId}:${x.at}`
+        if (persisted.has(key)) return { ok: true, duplicate: true, id: persisted.get(key), chars: 20 }
+        persisted.set(key, 77)
+        if (first) {
+          first = false
+          throw new Error('response lost after commit')
+        }
+        return { ok: true, id: 77, chars: 20 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '服务端已写入', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '不要重复记我' })
+  const firstResult = await h.mod.flush(GID)
+  assert.equal(firstResult.error, 'response lost after commit')
+  const retry = await h.mod.flush(GID)
+  assert.equal(retry.duplicate, true)
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.calls[0].at, h.calls[1].at)
+  assert.equal(persisted.size, 1)
+  h.mod.dispose()
+})
