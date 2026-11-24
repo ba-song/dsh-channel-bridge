@@ -266,3 +266,37 @@ test('flush 进行中有新回复到达：单飞结束后重新安排 flush，�
   assert.deepEqual(h.calls[1].reply, [{ text: '第二轮回复', at: T0 }])
   h.mod.dispose()
 })
+
+
+test('写入已落库但响应异常：重试沿用同一轮次时间，服务端可判 duplicate', async () => {
+  const persisted = new Map()
+  let first = true
+  const times = [T0, T0 + 5000]
+  const h = setup({
+    idleMs: 60000,
+    now: () => times.shift() ?? T0 + 9000,
+    memory: {
+      saveGroupTurn: async (x) => {
+        h.calls.push(x)
+        const key = `group-turn:${x.groupId}:${x.at}`
+        if (persisted.has(key)) return { ok: true, duplicate: true, id: persisted.get(key), chars: 20 }
+        persisted.set(key, 77)
+        if (first) {
+          first = false
+          throw new Error('response lost after commit')
+        }
+        return { ok: true, id: 77, chars: 20 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '服务端已写入', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '不要重复记我' })
+  const firstResult = await h.mod.flush(GID)
+  assert.equal(firstResult.error, 'response lost after commit')
+  const retry = await h.mod.flush(GID)
+  assert.equal(retry.duplicate, true)
+  assert.equal(h.calls.length, 2)
+  assert.equal(h.calls[0].at, h.calls[1].at)
+  assert.equal(persisted.size, 1)
+  h.mod.dispose()
+})
