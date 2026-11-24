@@ -170,3 +170,67 @@ test('config.groupMemory：默认开启/15s；enabled 只认布尔 true', () => 
   assert.equal(loadConfig({ groupMemory: { flushIdleMs: 5000 } }).groupMemory.flushIdleMs, 5000)
   assert.equal(loadConfig({ groupMemory: { flushIdleMs: 1 } }).groupMemory.flushIdleMs, 1000) // 下限 1s
 })
+
+
+test('写入限流后保留本轮内容；重试成功才推进游标', async () => {
+  const seq = [
+    { ok: false, reason: 'rate-limited' },
+    { ok: true, id: 'saved-after-retry', chars: 20 },
+  ]
+  const h = setup({
+    idleMs: 60000,
+    memory: { saveGroupTurn: async (x) => { h.calls.push(x); return seq.shift() } },
+    messages: [{ speaker: '群友A', text: '不要丢掉我', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '我听到了' })
+  const first = await h.mod.flush(GID)
+  assert.equal(first.reason, 'rate-limited')
+  assert.equal(h.calls.length, 1)
+
+  const second = await h.mod.flush(GID)
+  assert.equal(second.ok, true)
+  assert.equal(h.calls.length, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['不要丢掉我'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '我听到了', at: T0 }])
+
+  // 成功提交后，同一条旧入站不能再次进入记忆
+  await h.mod.flush(GID)
+  assert.equal(h.calls.length, 2)
+  h.mod.dispose()
+})
+
+test('saveGroupTurn 抛异常后保留回复；并发 flush 对同一群单飞', async () => {
+  let release
+  let attempts = 0
+  const gate = new Promise((resolve) => { release = resolve })
+  const h = setup({
+    idleMs: 60000,
+    memory: {
+      saveGroupTurn: async (x) => {
+        attempts += 1
+        h.calls.push(x)
+        if (attempts === 1) throw new Error('temporary failure')
+        if (attempts === 2) await gate
+        return { ok: true, id: 'ok', chars: 10 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '这条要留下', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '我来处理' })
+  const failed = await h.mod.flush(GID)
+  assert.equal(failed.ok, false)
+  assert.equal(failed.error, 'temporary failure')
+
+  const first = h.mod.flush(GID)
+  const concurrent = h.mod.flush(GID)
+  await Promise.resolve()
+  assert.equal(attempts, 2)
+  release()
+  const [a, b] = await Promise.all([first, concurrent])
+  assert.equal(a.ok, true)
+  assert.equal(b.ok, true)
+  assert.equal(attempts, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['这条要留下'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '我来处理', at: T0 }])
+  h.mod.dispose()
+})
