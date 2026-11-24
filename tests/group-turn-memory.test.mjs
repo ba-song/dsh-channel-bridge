@@ -234,3 +234,35 @@ test('saveGroupTurn 抛异常后保留回复；并发 flush 对同一群单飞',
   assert.deepEqual(h.calls[1].reply, [{ text: '我来处理', at: T0 }])
   h.mod.dispose()
 })
+
+
+test('flush 进行中有新回复到达：单飞结束后重新安排 flush，不丢缓冲', async () => {
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const h = setup({
+    idleMs: 10,
+    memory: {
+      saveGroupTurn: async (x) => {
+        h.calls.push(x)
+        if (h.calls.length === 1) await gate
+        return { ok: true, id: h.calls.length, chars: 10 }
+      },
+    },
+    messages: [{ speaker: '群友A', text: '第一轮', at: T0 - 1000 }],
+  })
+  h.mod.noteReply({ groupId: GID, text: '第一轮回复' })
+  const first = h.mod.flush(GID)
+
+  h.bucket.messages.push({ speaker: '群友B', text: '第二轮', at: T0 + 1000 })
+  h.mod.noteReply({ groupId: GID, text: '第二轮回复' })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(h.calls.length, 1)
+
+  release()
+  await first
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  assert.equal(h.calls.length, 2)
+  assert.deepEqual(h.calls[1].incoming.map((x) => x.text), ['第二轮'])
+  assert.deepEqual(h.calls[1].reply, [{ text: '第二轮回复', at: T0 }])
+  h.mod.dispose()
+})
