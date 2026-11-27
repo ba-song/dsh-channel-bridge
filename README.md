@@ -50,7 +50,7 @@
   **失败不重试**；返回 `{ok, channel:'email', delivered, to, subject}`。
 
 ```json
-{"channel":"qq","contactId":"2971030080","kind":"private","text":"在呢"}
+{"channel":"qq","contactId":"<OWNER_QQ_ID>","kind":"private","text":"在呢"}
 {"channel":"email","contactId":"owner@example.com","subject":"晚安","text":"早点睡"}
 ```
 
@@ -262,8 +262,8 @@ QQ ── SnowLuma(OneBot) ── WS ws://127.0.0.1:3001 ── 桥
 ## 6. 典型用法
 
 1) **日常私聊**：主人发 QQ → 她收到 → `dy_say` 回；
-2) **发图**：`dy_send_image({path:'/sdcard/DSHA/图片/x.png', contactId:'2971030080', caption:'给你看'})`；
-3) **先听再发**：`dy_send_voice({path:'/tmp/tts.wav', contactId:'2971030080'})`（TTS 由 dsh-media 生成）；
+2) **发图**：`dy_send_image({path:'/sdcard/DSHA/图片/x.png', contactId:'<OWNER_QQ_ID>', caption:'给你看'})`；
+3) **先听再发**：`dy_send_voice({path:'/tmp/tts.wav', contactId:'<OWNER_QQ_ID>'})`（TTS 由 dsh-media 生成）；
 4) **群里被 @ 接话**：@ 后自动带近况+群上下文；接着聊不用再 @（窗口 8 条/10 分钟）；
 5) **换会话**：`dy_bridge_rotate({kind:'private'})` → 新会话带 preset 与最近 50 条原话。
 
